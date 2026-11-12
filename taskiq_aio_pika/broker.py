@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncGenerator, Callable
+from contextlib import aclosing
 from datetime import timedelta
 from functools import partial
 from logging import getLogger
@@ -498,14 +499,17 @@ class AioPikaBroker(AsyncBroker):
                 # Suppress errors during iterator cleanup if channel is being closed
                 logger.info("Queue iterator closed during shutdown")
 
-        async for message in merge_async_iterables(
-            *[
-                body(queue, consumer_args)
-                for queue, consumer_args in queue_with_consumer_args_list
-                if not self._delay_queue or queue.name != self._delay_queue.name
-            ],
-        ):
-            yield message
+        async with aclosing(
+            merge_async_iterables(
+                *[
+                    body(queue, consumer_args)
+                    for queue, consumer_args in queue_with_consumer_args_list
+                    if not self._delay_queue or queue.name != self._delay_queue.name
+                ],
+            ),
+        ) as messages:
+            async for message in messages:
+                yield message
 
     async def shutdown(self) -> None:
         """Close all connections on shutdown."""
